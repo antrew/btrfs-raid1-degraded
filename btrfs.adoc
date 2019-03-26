@@ -148,3 +148,24 @@ vagrant up
 ```
 
 To boot edit Grub boot parameters: `rootflags=subvol=@,degraded`
+
+Now try to produce some writes
+
+```
+apt-get update
+apt-get upgrade
+```
+
+These commands randomly fail without any errors in dmesg.
+
+
+Add new device to the boot mirror:
+
+```
+mdadm --manage /dev/md0 --add /dev/sdb1
+btrfs dev add /dev/sdb2 /
+btrfs balance start /
+btrfs device delete missing /
+```
+
+Now apt-get works again
