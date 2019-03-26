@@ -1,0 +1,94 @@
+
+
+vagrant up
+vagrant ssh
+
+
+```
+apt install mdadm
+apt install lvm2
+apt install btrfs-tools
+apt install cryptsetup
+```
+
+== Migrate to raid1 boot and btrfs rootfs
+
+. Add one hdd `hdd1` with the default size of 8GB
+
+```
+
+
+mdadm --create --verbose /dev/md0 --level=1 --raid-devices=2 --metadata=0.90 /dev/sdb1 /dev/sdc1
+
+
+mkfs.ext4 -F /dev/md0
+
+
+
+
+cryptsetup luksFormat /dev/sdb2
+cryptsetup luksOpen /dev/sdb2 sdb2_crypt
+mkfs.btrfs /dev/mapper/sdb2_crypt
+
+mount /dev/mapper/sdb2_crypt /mnt
+btrfs sub create /mnt/@
+umount /mnt
+
+mount /dev/mapper/sdb2_crypt /mnt -o subvol=@
+
+mkdir -p /mnt/boot
+mount /dev/md0 /mnt/boot
+
+mkdir /oldroot
+mount -o bind / /oldroot
+rsync -a --delete /oldroot/ /mnt/
+
+mdadm --detail --scan >> /mnt/etc/mdadm/mdadm.conf
+
+echo '/dev/mapper/sdb2_crypt /     btrfs subvol=@ 1 1'  > /mnt/etc/fstab
+echo '/dev/md0               /boot ext4  defaults 1 2' >> /mnt/etc/fstab
+
+echo "sdb2_crypt UUID=`blkid -o value -s UUID /dev/sdb2` none luks" > /mnt/etc/crypttab
+
+
+mount -o bind /dev /mnt/dev
+mount -t proc proc /mnt/proc
+chroot /mnt
+update-grub
+grub-install /dev/sdb
+grub-install /dev/sdc
+update-initramfs -u
+
+poweroff
+```
+
+== Remove the initial disk
+
+. Remove the initial disk
+
+== TODO
+
+== Convert btrfs to raid1
+
+. Add one hdd `hdd2` with the default size of 8GB
+
+```
+cryptsetup luksFormat /dev/sdb2
+cryptsetup luksOpen /dev/sdb2 sdc2_crypt
+echo "sdc2_crypt UUID=`blkid -o value -s UUID /dev/sdb2` none luks" >> /etc/crypttab
+
+btrfs device add /dev/mapper/sdc2_crypt /
+
+update-grub
+grub-install /dev/sda
+grub-install /dev/sdb
+update-initramfs -u
+
+btrfs balance start -dconvert=raid1 -mconvert=raid1 /
+```
+poweroff
+
+== Simulate drive failure
+
+. Remove the first drive
+

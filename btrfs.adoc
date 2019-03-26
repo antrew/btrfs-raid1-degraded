@@ -1,0 +1,150 @@
+= Proof of concept for BTRFS raid1 rootfs partition
+
+== Initialize a Vagrant box
+
+```
+vagrant up
+vagrant halt
+```
+
+== Migrate to (degraded) mdadm raid1 boot and btrfs rootfs
+
+. Add one hdd `hdd1` with the default size of 8GB to the VirtualBox VM
+
+. Start the VM
++
+```
+vagrant ssh
+sudo -i
+```
+
+. Prepare btrfs root partition
++
+```
+echo 'n
+
+
+
++200M
+n
+
+
+
+
+w
+' | fdisk /dev/sdb
+mkfs.btrfs /dev/sdb2
+
+mount /dev/sdb2 /mnt
+btrfs sub create /mnt/@
+umount /mnt
+
+```
+
+. Prepare boot partition on a new degraded mdadm raid1
++
+```
+mdadm --create --verbose /dev/md0 --level=1 --raid-devices=2 --metadata=0.90 /dev/sdb1 missing
+mkfs.ext4 -F /dev/md0
+```
+
+. Transfer the system to the new filesystems
++
+```
+mount /dev/sdb2 /mnt -o subvol=@
+mkdir -p /mnt/boot
+mount /dev/md0 /mnt/boot
+
+mkdir /oldroot
+mount -o bind / /oldroot
+rsync -a --delete /oldroot/ /mnt/
+```
+
+. Setup new fstab and mdadm.conf
++
+```
+mdadm --detail --scan >> /mnt/etc/mdadm/mdadm.conf
+
+echo "UUID=`blkid -s UUID -o value /dev/sdb2` /     btrfs subvol=@ 1 1"  > /mnt/etc/fstab
+echo "UUID=`blkid -s UUID -o value /dev/md0`  /boot ext4  defaults 1 2" >> /mnt/etc/fstab
+```
+
+. Chroot into the new filesystem and setup grub and initrd
++
+```
+mount -o bind /dev /mnt/dev
+mount -t proc proc /mnt/proc
+chroot /mnt
+update-grub
+grub-install /dev/sdb
+update-initramfs -u
+```
+
+. Power off the machine
++
+```
+poweroff
+```
+
+== Remove the initial disk
+
+. Remove the initial disk `jessie.vmdk` from the VirtualBox VM
+
+. Check that the VM starts
++
+```
+vagrant up
+vagrant halt
+```
+
+== Add mirrors to boot and rootfs filesystems
+
+. Add one hdd `hdd2` to SATA Port 2 with the default size of 8GB to the VirtualBox VM
+
+. Start the VM
++
+```
+vagrant up
+vagrant ssh
+sudo -i
+```
+
+. Partition the new drive and add its new partitions to mdadm and btrfs
++
+```
+echo 'n
+
+
+
++200M
+n
+
+
+
+
+w
+' | fdisk /dev/sdb
+
+mdadm --add /dev/md0 /dev/sdb1
+btrfs device add /dev/sdb2 /
+
+update-grub
+grub-install /dev/sda
+grub-install /dev/sdb
+update-initramfs -u
+
+btrfs balance start -dconvert=raid1 -mconvert=raid1 /
+```
+poweroff
+
+== Simulate drive failure
+
+. Remove the first drive `hdd1`
+
+. Start the VM
++
+```
+vagrant up
+```
+
+To boot edit Grub boot parameters: `rootflags=subvol=@,degraded`
