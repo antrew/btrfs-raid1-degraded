@@ -14,6 +14,7 @@ vagrant halt
 . Start the VM
 +
 ```
+vagrant up
 vagrant ssh
 sudo -i
 ```
@@ -158,6 +159,9 @@ apt-get upgrade
 
 These commands randomly fail without any errors in dmesg.
 
+== Fixing a degraded btrfs filesystem
+
+=== Adding a new device
 
 Add new device to the boot mirror:
 
@@ -169,3 +173,21 @@ btrfs device delete missing /
 ```
 
 Now apt-get works again
+
+=== Removing the missing device
+
+```
+btrfs balance start -f -dconvert=single -mconvert=single /
+btrfs dev delete missing /
+btrfs balance start -mconvert=dup /
+```
+
+```
+wipefs --all /dev/sda2
+btrfs device add /dev/sda2 /
+wipefs --all /dev/sdb2
+btrfs device add /dev/sdb2 /
+
+btrfs balance start -dconvert=raid1 -mconvert=raid1 /
+
+```
